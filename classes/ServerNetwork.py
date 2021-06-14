@@ -2,7 +2,7 @@ import socket
 import http
 import websockets
 import asyncio
-from Client import Client
+from classes.Client import Client
 
 async def health_check(path, request_headers):
         if path == "/health/":

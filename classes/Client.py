@@ -1,5 +1,3 @@
-from classes.Client import Client
-
 """
     this stores the connection information on the player
 """

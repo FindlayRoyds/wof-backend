@@ -5,8 +5,8 @@ name = "pypi"
 
 [packages]
 requests = "*"
-websockets = "*"
 async = "*"
+websockets = "*"
 
 [dev-packages]
 

@@ -7,7 +7,6 @@ import _thread
 from os import environ
 from classes.Game import Game
 from classes.ServerNetwork import Network
-from classes.Client import Client
 
 on_heroku = False
 if 'RUNNING_ON_HEROKU' in os.environ:
