@@ -35,7 +35,8 @@ class Network:
         asyncio.get_event_loop().run_forever()
         
     async def listener(self, socket, path):
-        client = Client(socket, path, await socket.recv())
+        name = socket.recv()
+        client = Client(socket, path, name)
 
     def accept_connection(self):
         connection, address = self.socket.accept()
