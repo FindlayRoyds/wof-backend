@@ -2,6 +2,7 @@ import socket
 import http
 import websockets
 import asyncio
+from Client import Client
 
 async def health_check(path, request_headers):
         if path == "/health/":
@@ -34,11 +35,8 @@ class Network:
         asyncio.get_event_loop().run_forever()
         
     async def listener(self, socket, path):
-        async for message in socket:
-            await socket.send(message)
-            print(f"recieved message: {message}")
-    
-    
+        name = await socket.recv()
+        print(name)
 
     def accept_connection(self):
         connection, address = self.socket.accept()
