@@ -33,7 +33,8 @@ class Network:
         print(f"server initialized succesfully on {self.ip}:{self.port}")
 
         asyncio.get_event_loop().run_forever()
-        
+    
+    @asyncio.coroutine
     def listener(self, socket, path):
         name = socket.recv()
         client = Client(socket, path, name)
