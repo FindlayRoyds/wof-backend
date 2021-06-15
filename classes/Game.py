@@ -22,9 +22,9 @@ class Game:
             the player class, stores information such as their name, their score, etc.
         """
         class Player():
-            def __init__(self, players_service, name):
+            def __init__(self, players_service, client):
                 self.players_service = players_service
-                self.name = name
+                self.client, self.name = client, client.name
             
             def __repr__(self):
                 return self.name
