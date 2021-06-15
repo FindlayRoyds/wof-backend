@@ -37,7 +37,7 @@ class Network:
     
     async def listener(self, socket, path):
         async for message in socket:
-            print("message recieved: {message}")
+            await print(f"message recieved: {message}")
             await socket.send(message)
 
     def accept_connection(self):
