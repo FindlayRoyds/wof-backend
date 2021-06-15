@@ -26,8 +26,8 @@ class Network:
         self.server = websockets.serve(
             self.listener,
             self.ip,
-            self.port,
-            process_request=health_check
+            self.port#,
+            #process_request=health_check
             )
 
         asyncio.get_event_loop().run_until_complete(self.server)
