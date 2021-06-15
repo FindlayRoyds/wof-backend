@@ -2,6 +2,7 @@ import socket
 import http
 import websockets
 import asyncio
+import _thread
 from classes.Client import Client
 
 async def health_check(path, request_headers):
@@ -34,10 +35,13 @@ class Network:
 
         asyncio.get_event_loop().run_forever()
     
-    @asyncio.coroutine
     def listener(self, socket, path):
         name = socket.recv()
         client = Client(socket, path, name)
+        print(name)
+    
+    async def listener_init(self, socket, path):
+        _thread.start_new_thread(self.listener, (socket, path))
 
     def accept_connection(self):
         connection, address = self.socket.accept()
