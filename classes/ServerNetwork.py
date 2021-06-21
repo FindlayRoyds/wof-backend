@@ -4,6 +4,7 @@ import websockets
 import threading
 import asyncio
 import json
+from classes.Rooms import Rooms
 
 """
     the server class handles information about the server, and handles
@@ -14,13 +15,31 @@ class Network:
         this stores the connection information on the player
     """
     class Client():
-        def __init__(self, socket, path, name, location):
+        def __init__(self, network, socket, path, name, location):
+            self.network = network
             self.socket, self.path, self.name =socket, path, name
             self.game = None
+            self.room = None
             self.location = location
+
+            network.connected.add(self)
         
         async def send(self, data):
             await self.socket.send(json.dumps(data))
+        
+        async def recv(self):
+            return await self.socket.recv()
+            #return json.loads(await self.socket.recv())
+        
+        async def disconnect(self, reason="Unknown reason"):
+            print("disconnecting client")
+
+            if self in self.network.connected:
+                self.network.connected.remove(self)
+            if self.socket in self.network.sockets:
+                self.network.sockets.remove(self.socket)
+            
+
 
     def __init__(
         self,
@@ -54,33 +73,47 @@ class Network:
     async def client_init(self, socket, path):
         self.sockets.add(socket)
         try:
-            name = await socket.recv()
-            await self.add_client(socket, path, name)
+            await asyncio.sleep(2)
+            await socket.send(
+                json.dumps(
+                    {"TYPE": "CONNECTED"}
+                )
+            )
+
+            data = await socket.recv()
+            if data["TYPE"] == "LOGIN":
+                await self.add_client(socket, path, data["DATA"])
+            else:
+                raise Exception("Client did not attempt to login")
         except Exception as exception:
             print(exception)
         finally:
             self.sockets.remove(socket)
     
     async def add_client(self, socket, path, name):
-        client = self.Client(socket, path, name, "ROOM_VIEW")
-        self.connected.add(client)
+        client = self.Client(self, socket, path, name, "ROOM_LIST")
 
         try:
-            await self.send_all({"TYPE": "LOAD_ROOMS", "DATA": [other_client.name for other_client in self.connected]}, "ROOM_VIEW")
+            await self.send_all(
+                {"TYPE": "LOAD_ROOMS", "DATA": [other_client.name for other_client in self.connected]},
+                "ROOM_LIST"
+                )
 
-            listener_process = threading.Thread(target = asyncio.run, args = (await self.listener(client)))
-            listener_process.start()
+            listener_thread = threading.Thread(target = asyncio.run, args = (await self.listener(client)))
+            listener_thread.start()
         except Exception as exception:
             print(exception)
-            self.connected.remove(client)
+            client.disconnect(str(exception))
             print(f"removed client: {client.name}")
-            await self.send_all({"TYPE": "LOAD_ROOMS", "DATA": [other_client.name for other_client in self.connected]}, "ROOM_VIEW")
+            await self.send_all(
+                {"TYPE": "LOAD_ROOMS", "DATA": [other_client.name for other_client in self.connected]},
+                "ROOM_LIST"
+                )
 
     async def listener(self, client):
-        for i in range(3):
-            print(f"message {i} from {client.name}: {await client.socket.recv()}")
-        print('finishing')
-    
+        while True:
+            print(await client.recv())
+
     async def send_all(self, data, location):
         for client in self.connected:
             if location == None or client.location == location:
