@@ -73,7 +73,6 @@ class Network:
     async def client_init(self, socket, path):
         self.sockets.add(socket)
         try:
-            await asyncio.sleep(2)
             await socket.send(
                 json.dumps(
                     {"TYPE": "CONNECTED"}
