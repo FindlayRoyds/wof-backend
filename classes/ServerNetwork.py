@@ -12,6 +12,9 @@ on_heroku = False
 if 'RUNNING_ON_HEROKU' in os.environ:
     on_heroku = True
 
+def start_game(room):
+    pass
+
 """
     the server class handles information about the server, and handles
     connections between the server and the client
@@ -27,6 +30,8 @@ class Network:
             self.game = None
             self.room = None
             self.location = location
+            self.ready = False
+            self.game = None
 
             network.connected.add(self)
         
@@ -80,7 +85,7 @@ class Network:
         self.sockets.add(socket)
         try:
             if not on_heroku:
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(2.5)
             await socket.send(
                 json.dumps(
                     {"TYPE": "CONNECTED"}
@@ -125,7 +130,16 @@ class Network:
                 elif type == "LEAVE_ROOM":
                     if client.room != None:
                         await client.room.remove_client(client)
-                
+                elif type == "CHANGE_READY":
+                    room = client.room
+                    if room != None:
+                        client.ready = data
+                        await room.update_clients()
+                        starting = await room.start_game()
+
+                        if starting:
+                            start_game(room)
+
 
             #listener_thread = threading.Thread(target = asyncio.run, args = (await self.listener(client)))
             #listener_thread.start()

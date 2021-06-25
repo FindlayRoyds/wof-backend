@@ -2,25 +2,21 @@ class Rooms():
     class Room():
         def __init__(self, name, room_handler):
             self.connected = set()
-            self.name = name
             self.room_handler = room_handler
+
+            self.name = name
+            self.min_players = 2
+            self.max_players = 4
         
         def get_data(self):
             return {
                 "HASH": hash(self),
                 "NAME": self.name
                 }
-        
-        def get_connected_list(self):
-            return [connected.name for connected in self.connected]
-        
-        def get_full_data(self):
-            return {
-                "ROOM_DATA": self.get_data(),
-                "CONNECTED_LIST": self.get_connected_list()
-            }
 
         async def add_client(self, client):
+            if len(self.connected) + 1 > self.max_players: return
+
             self.connected.add(client)
             if client.room != None:
                 print("was already in room")
@@ -48,9 +44,22 @@ class Rooms():
             await self.update_clients()
 
         async def update_clients(self):
-            client_names = [client.name for client in self.connected]
             for client in self.connected:
+                print(client.ready)
+                client_names = [
+                    f"{other_client.name}: {'READY' if other_client.ready else 'NOT READY'}" if client != other_client else "You"
+                    for other_client in self.connected
+                    ]
                 await client.send({"TYPE": "ROOM_CONNECTED_UPDATE", "DATA": client_names})
+        
+        async def start_game(self):
+            if len(self.connected) < self.min_players: return False
+
+            for client in self.connected:
+                if client.ready == False:
+                    return False
+            print("starting game")
+            return True
 
     def __init__(self, network):
         self.rooms = {}
