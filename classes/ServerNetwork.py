@@ -38,10 +38,6 @@ class Network:
             return json.loads(await self.socket.recv())
         
         async def disconnect(self, reason="Unknown reason"):
-            print("disconnecting client")
-
-            print("made it here")
-
             if self in self.network.connected:
                 self.network.connected.remove(self)
             if self.socket in self.network.sockets:
@@ -60,7 +56,7 @@ class Network:
         self.connected = set()
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.rooms = Rooms(self)
-    
+
     def bind(self):
         print("initializing server...")
 
@@ -97,6 +93,7 @@ class Network:
             else:
                 raise Exception("Client did not attempt to login")
         except Exception as exception:
+            print("socket exception")
             traceback.print_exc()
         finally:
             if socket in self.sockets:
@@ -106,7 +103,7 @@ class Network:
         client = self.Client(self, socket, path, name, "ROOM_LIST")
 
         try:
-            await client.send({"TYPE": "LOAD_ROOMS", "DATA": [room.name for room in self.rooms.rooms]})
+            await client.send({"TYPE": "LOAD_ROOMS", "DATA": self.rooms.get_room_list()})
             """await self.send_all(
                 {"TYPE": "LOAD_ROOMS", "DATA": [other_client.name for other_client in self.connected]},
                 "ROOM_LIST"
@@ -115,11 +112,20 @@ class Network:
             while True:
                 recv = await client.recv()
                 type = recv["TYPE"]
-                data = recv["DATA"]
+                if "DATA" in recv:
+                    data = recv["DATA"]
 
                 if type == "CREATE_ROOM":
                     room = await self.rooms.add_room(data)
                     await room.add_client(client)
+                elif type == "JOIN_ROOM":
+                    if data in self.rooms.rooms:
+                        room = self.rooms.rooms[data]
+                        await room.add_client(client)
+                elif type == "LEAVE_ROOM":
+                    if client.room != None:
+                        await client.room.remove_client(client)
+                
 
             #listener_thread = threading.Thread(target = asyncio.run, args = (await self.listener(client)))
             #listener_thread.start()
@@ -134,7 +140,6 @@ class Network:
             print(await client.recv())
 
     async def send_all(self, data, location):
-        print(f"len of self.connected: {len(self.connected)}")
         for client in self.connected:
             if location == None or client.location == location:
                 await client.send(data)
