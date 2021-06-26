@@ -7,13 +7,12 @@ import json
 import os
 import traceback
 from classes.Rooms import Rooms
+from classes.Game import Game
 
 on_heroku = False
 if 'RUNNING_ON_HEROKU' in os.environ:
     on_heroku = True
 
-def start_game(room):
-    pass
 
 """
     the server class handles information about the server, and handles
@@ -32,8 +31,12 @@ class Network:
             self.location = location
             self.ready = False
             self.game = None
+            self.player = None
 
             network.connected.add(self)
+        
+        async def error(self, message):
+            await self.send({"TYPE": "ERROR", "DATA": f"ERROR: {message}"})
         
         async def send(self, data):
             await self.socket.send(json.dumps(data))
@@ -43,6 +46,9 @@ class Network:
             return json.loads(await self.socket.recv())
         
         async def disconnect(self, reason="Unknown reason"):
+            if self.game != None:
+                self.game.player_handler.remove_player(self.player)
+
             if self in self.network.connected:
                 self.network.connected.remove(self)
             if self.socket in self.network.sockets:
@@ -85,7 +91,7 @@ class Network:
         self.sockets.add(socket)
         try:
             if not on_heroku:
-                await asyncio.sleep(2.5)
+                await asyncio.sleep(0)
             await socket.send(
                 json.dumps(
                     {"TYPE": "CONNECTED"}
@@ -138,7 +144,16 @@ class Network:
                         starting = await room.start_game()
 
                         if starting:
-                            start_game(room)
+                            game = Game(room)
+                            await self.rooms.remove_room(room)
+                            await game.start()
+                elif type == "SUBMIT_GUESS":
+                    if client.player != None and client.game != None:
+                        await client.game.round_handler.current_round.make_guess(client.player, data)
+                elif type == "LEAVE_GAME":
+                    if client.player != None and client.game != None:
+                        client.game.player_handler.remove_player(client.player)
+                        await client.send({"TYPE": "LOAD_ROOMS", "DATA": self.rooms.get_room_list()})
 
 
             #listener_thread = threading.Thread(target = asyncio.run, args = (await self.listener(client)))

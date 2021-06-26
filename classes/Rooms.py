@@ -22,6 +22,7 @@ class Rooms():
                 print("was already in room")
                 await client.room.remove_client(client)
             client.room = self
+            client.ready = False
             client.location = "ROOM"
 
             data = self.get_data()
@@ -33,6 +34,7 @@ class Rooms():
             self.connected.remove(client)
             client.location = "ROOM_LIST"
             client.room = None
+            client.ready = False
             try:
                 await client.send({"TYPE": "LOAD_ROOMS", "DATA": self.room_handler.get_room_list()})
             except:
