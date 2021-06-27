@@ -1,7 +1,6 @@
 import socket
 import http
 import websockets
-import threading
 import asyncio
 import json
 import os
@@ -10,7 +9,7 @@ from classes.Rooms import Rooms
 from classes.Game import Game
 
 on_heroku = False
-if 'RUNNING_ON_HEROKU' in os.environ:
+if "RUNNING_ON_HEROKU" in os.environ:
     on_heroku = True
 
 
@@ -18,14 +17,17 @@ if 'RUNNING_ON_HEROKU' in os.environ:
     the server class handles information about the server, and handles
     connections between the server and the client
 """
+
+
 class Network:
     """
-        this stores the connection information on the player
+    this stores the connection information on the player
     """
-    class Client():
+
+    class Client:
         def __init__(self, network, socket, path, name, location):
             self.network = network
-            self.socket, self.path, self.name =socket, path, name
+            self.socket, self.path, self.name = socket, path, name
             self.game = None
             self.room = None
             self.location = location
@@ -34,34 +36,30 @@ class Network:
             self.player = None
 
             network.connected.add(self)
-        
+
         async def error(self, message):
             await self.send({"TYPE": "ERROR", "DATA": f"ERROR: {message}"})
-        
+
         async def send(self, data):
             await self.socket.send(json.dumps(data))
-        
+
         async def recv(self):
-            #return await self.socket.recv()
+            # return await self.socket.recv()
             return json.loads(await self.socket.recv())
-        
+
         async def disconnect(self, reason="Unknown reason"):
             if self.game != None:
-                self.game.player_handler.remove_player(self.player)
+                await self.game.player_handler.remove_player(self.player)
 
             if self in self.network.connected:
                 self.network.connected.remove(self)
             if self.socket in self.network.sockets:
                 self.network.sockets.remove(self.socket)
-            
+
             if self.room != None:
                 await self.room.remove_client(self)
-            
-    def __init__(
-        self,
-        ip:str="0.0.0.0",
-        port:int=5555
-         ):
+
+    def __init__(self, ip: str = "0.0.0.0", port: int = 5555):
         self.ip, self.port = ip, port
         self.sockets = set()
         self.connected = set()
@@ -72,54 +70,74 @@ class Network:
         print("initializing server...")
 
         self.server = websockets.serve(
-            self.client_init,
-            self.ip,
-            self.port,
-            process_request=self.health_check
-            )
+            self.client_init, self.ip, self.port, process_request=self.health_check
+        )
 
         asyncio.get_event_loop().run_until_complete(self.server)
         print(f"server initialized succesfully on {self.ip}:{self.port}")
 
         asyncio.get_event_loop().run_forever()
-    
+
     async def health_check(self, path, request_headers):
         if path == "/health/":
             return http.HTTPStatus.OK, [], b"OK\n"
-    
+
     async def client_init(self, socket, path):
         self.sockets.add(socket)
         try:
             if not on_heroku:
                 await asyncio.sleep(0)
-            await socket.send(
-                json.dumps(
-                    {"TYPE": "CONNECTED"}
-                )
-            )
+            await socket.send(json.dumps({"TYPE": "CONNECTED"}))
 
-            data = json.loads(await socket.recv())
-            if data["TYPE"] == "LOGIN":
-                await self.add_client(socket, path, data["DATA"])
-            else:
-                raise Exception("Client did not attempt to login")
+            while True:
+                data = json.loads(await socket.recv())
+                if data["TYPE"] == "LOGIN":
+                    if len(data["DATA"]) == 0:
+                        await socket.send(
+                            json.dumps(
+                                {
+                                    "TYPE": "ERROR",
+                                    "DATA": f"ERROR: Please input a username",
+                                }
+                            )
+                        )
+                    else:
+                        await self.add_client(socket, path, data["DATA"])
+                        break
+                else:
+                    await socket.send(
+                        json.dumps(
+                            {
+                                "TYPE": "ERROR",
+                                "DATA": f"ERROR: An unexpected error occured while attempting to login.",
+                            }
+                        )
+                    )
+
         except Exception as exception:
-            print("socket exception")
             traceback.print_exc()
+            try:
+                await socket.send(
+                    json.dumps({"TYPE": "ERROR", "DATA": f"ERROR: {exception}"})
+                )
+            except:
+                pass
         finally:
             if socket in self.sockets:
                 self.sockets.remove(socket)
-    
+
     async def add_client(self, socket, path, name):
         client = self.Client(self, socket, path, name, "ROOM_LIST")
 
         try:
-            await client.send({"TYPE": "LOAD_ROOMS", "DATA": self.rooms.get_room_list()})
+            await client.send(
+                {"TYPE": "LOAD_ROOMS", "DATA": self.rooms.get_room_list()}
+            )
             """await self.send_all(
                 {"TYPE": "LOAD_ROOMS", "DATA": [other_client.name for other_client in self.connected]},
                 "ROOM_LIST"
                 )"""
-            
+
             while True:
                 recv = await client.recv()
                 type = recv["TYPE"]
@@ -149,18 +167,25 @@ class Network:
                             await game.start()
                 elif type == "SUBMIT_GUESS":
                     if client.player != None and client.game != None:
-                        await client.game.round_handler.current_round.make_guess(client.player, data)
+                        await client.game.round_handler.current_round.make_guess(
+                            client.player, data
+                        )
                 elif type == "LEAVE_GAME":
                     if client.player != None and client.game != None:
-                        client.game.player_handler.remove_player(client.player)
-                        await client.send({"TYPE": "LOAD_ROOMS", "DATA": self.rooms.get_room_list()})
+                        await client.game.player_handler.remove_player(client.player)
+                        await client.send(
+                            {"TYPE": "LOAD_ROOMS", "DATA": self.rooms.get_room_list()}
+                        )
 
-
-            #listener_thread = threading.Thread(target = asyncio.run, args = (await self.listener(client)))
-            #listener_thread.start()
+            # listener_thread = threading.Thread(target = asyncio.run, args = (await self.listener(client)))
+            # listener_thread.start()
         except Exception as exception:
             if exception.__class__.__name__ != "ConnectionClosedOK":
                 traceback.print_exc()
+            try:
+                await client.error(exception)
+            except:
+                pass
             await client.disconnect(str(exception))
             print(f"removed client: {client.name}")
 
