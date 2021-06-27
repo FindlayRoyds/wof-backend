@@ -1,58 +1,64 @@
+"""
+GAME CLASS FILE
+this file can be used to import the game class into the
+main server loop
+"""
+
 import random
 import re
 import asyncio
 
+# stores a reference to the file containing the game's phrases
 phrases_file = "src/phrases"
-
-"""
-    The parent class for the entire game instance.
-    Can be used to create a new round by removing the old game instance, and
-    creating a new one
-"""
+# used to check if a guess is in the alphabet
+alphabet = "abcdefghijklmnopqrstuvwxyz"
 
 
 class Game:
     """
-    The parent service class. Services are all children of the game instance,
-    and are used to implement functionality, such as generating the random number,
-    or storing the score for players
+    The parent class for the entire game instance.
+    contains all of the specific handlers which are used to
+    interact with the game
     """
 
     class Service:
+        """
+        The parent service class. Services are all children of the game
+        instance, and are used to implement functionality, such as
+        generating the random number, or storing the score for players
+        """
         def __init__(self, game):
             self.game = game
 
-    """
-        The players service stores the player instances, as well as the scores so
-        far in the game
-    """
-
     class PlayerHandler(Service):
         """
-        the player class, stores information such as their name, their score, etc.
+        The players service stores the player instances, as well as the
+        scores so far in the game. allows for adding and removing
+        players, as well as other functions such as sending a websocket
+        message to all players
         """
 
         class Player:
+            """
+            the player class, stores information such as their name,
+            their score, etc.
+            """
             def __init__(self, game, client):
                 self.game = game
                 self.client = client
                 self.score = 0
 
-            def __repr__(self):
-                return self.client.name
-
         def __init__(self, game):
             super().__init__(game)
             self.players = []
 
-        def __repr__(self):
-            return ", ".join([player.name for player in self.players])
-
+        # allows players to be added to the game
         def add_player(self, client):
             player = self.Player(self.game, client)
             self.players.append(player)
             client.player = player
 
+        # allows players to be removed from the game
         async def remove_player(self, player):
             self.players.remove(player)
 
@@ -60,6 +66,7 @@ class Game:
             player.client.player = None
             player.client.location = "ROOM_LIST"
 
+            # shifts to the next person's turn if needed
             current_round = self.game.round_handler.current_round
             if len(self.players) == 0:
                 del self.game
@@ -72,20 +79,29 @@ class Game:
                         current_round.current_player
                     )
 
-    """
-        The phrases service stores the different sayings/text which can appear in
-        a round
-    """
+            await self.game.update_players()
 
     class PhraseHandler(Service):
         """
-        phrase objects store some text as well as the genre for the text. These may
-        be selected during a game to be guessed by the players
+        The phrases service stores the different sayings/text which can
+        appear in a round
         """
 
         class Phrase:
+            """
+            phrase objects store some text as well as the genre for the
+            text. These may be selected during a game to be guessed by
+            the players
+            """
             def __init__(self):
-                self.text = random.choice(open(phrases_file).readlines()).rstrip()
+                self.text = random.choice(
+                    open(phrases_file).readlines()
+                ).rstrip()
+
+                """
+                this section of code is unused. It was originally
+                planned for displaying the phrase on a 3d board on
+                the client with special formatting
 
                 line_lengths = [12, 14, 14, 12]
                 lines = [[], [], [], []]
@@ -97,7 +113,8 @@ class Game:
 
                 while True:
                     word = words[word_num]
-                    if cur_line_lengths[line_num] + len(word) > line_lengths[line_num]:
+                    if cur_line_lengths[line_num] +
+                            len(word) > line_lengths[line_num]:
                         line_num += 1
                     else:
                         lines[line_num].append(word)
@@ -115,46 +132,63 @@ class Game:
                     print(f"line: {' '.join(line)}")
 
                 self.lines = lines
+                """
 
         def __init__(self, game):
             super().__init__(game)
 
-    """
-        The round handler service handles information on the rounds in the
-        game, such as what round number the game is on, and which player's turn
-        it is.
-    """
-
     class RoundHandler(Service):
+        """
+        The round handler service handles what round the game is
+        currently on, by storing a reference to it. Allows new rounds
+        to be created
+        """
+
         class Round:
+            """
+            this class is the main functionality of the game, as it is
+            what allows functionality to be added to induvidual rounds,
+            such as making guesses, advancing to the next player,
+            awarding points, etc.
+            """
             def __init__(self, game):
                 self.game = game
                 self.phrase = game.phrase_handler.Phrase()
-                self.current_player = random.choice(game.player_handler.players)
+                self.current_player = random.choice(
+                    game.player_handler.players
+                )
                 self.current_player_index = game.player_handler.players.index(
                     self.current_player
                 )
 
+            # this allows a new round to be started asynchronously, as
+            # __init__ cannot be awaited
             async def start(self):
-                print("starting")
                 self.prize = self.game.wheel_handler.generate_prize()
 
-                print(self.current_player.client.name)
-
                 self.guessed_letters = set([",", "-", "'", '"', " "])
+                self.ignore_letters = set([",", "-", "'", '"', " "])
                 self.total_guessed = 0
+
+                await self.game.update_players()
 
                 await self.game.send_all(
                     {"TYPE": "GAME_MESSAGE", "DATA": "A new round is starting"}
                 )
 
                 await asyncio.sleep(1.5)
-                await self.game.send_all({"TYPE": "SET_PRIZE", "DATA": self.prize})
+                await self.send_turn_data()
+                await self.update_phrase()
+
+                await self.game.send_all(
+                    {"TYPE": "SET_PRIZE", "DATA": self.prize}
+                )
 
                 await asyncio.sleep(5)
-                await self.send_turn_data()
 
-            async def advance(self):
+            # moves onto the next persons turn. Maintains the correct
+            # order even when people leave the game
+            async def advance(self, change_score=True):
                 players = self.game.player_handler.players
 
                 next_index = (self.current_player_index + 1) % len(players)
@@ -162,20 +196,63 @@ class Game:
                 self.current_player = players[next_index]
                 self.current_player_index = next_index
 
+                await self.game.update_players()
+
+                await self.send_turn_data()
+                await self.update_phrase()
+
                 self.prize = self.game.wheel_handler.generate_prize()
-                await self.game.send_all({"TYPE": "SET_PRIZE", "DATA": self.prize})
+                await self.game.send_all(
+                    {"TYPE": "SET_PRIZE", "DATA": self.prize}
+                )
 
                 await asyncio.sleep(5)
-                await self.send_turn_data()
 
+            # this sends a message to the client telling the player
+            # who's turn it is
             async def send_turn_data(self):
                 for player in self.game.player_handler.players:
                     name = self.current_player.client.name
-                    msg_data = "Your" if player == self.current_player else f"{name}'s"
+                    is_turn = player == self.current_player
+                    msg_data = "Your" if is_turn else f"{name}'s"
                     msg = f"It is {msg_data} turn"
                     data = {"TYPE": "GAME_MESSAGE", "DATA": msg}
                     await player.client.send(data)
 
+            # this updates the phrase representation (with underscores)
+            # and sends it to all the players. Also adds the guessed
+            # letters
+            async def update_phrase(self):
+                self.display_phrase = (
+                    "".join(
+                        [
+                            letter if letter.lower()
+                            in self.guessed_letters else "_"
+                            for letter in self.phrase.text
+                        ]
+                    ) +
+                    " guessedletters: " +
+                    ", ".join(
+                        list(
+                            filter(
+                                (None).__ne__,
+                                [
+                                    letter
+                                    if letter not in self.ignore_letters
+                                    else None
+                                    for letter in self.guessed_letters
+                                ],
+                            )
+                        )
+                    )
+                )
+                await self.game.send_all(
+                    {"TYPE": "UPDATE_PHRASE", "DATA": self.display_phrase}
+                )
+
+            # this is fired when the server class recieves a guess
+            # attempt from a client. It handles checking the
+            # validity of the guess, awarding points, etc.
             async def make_guess(self, player, guess: str):
                 if player != self.current_player:
                     await player.client.error(
@@ -186,10 +263,13 @@ class Game:
                 guess = guess.lower()
                 phrase = self.phrase.text.lower()
 
-                print(f"guessed {guess}")
+                if guess in self.guessed_letters:
+                    await player.client.error("Please submit a new letter")
+                    return
 
                 if len(guess) == 1:
-                    if guess.isalpha():
+                    # client guessed a single letter
+                    if guess in alphabet:
                         if guess not in self.guessed_letters:
                             occurances = phrase.count(guess)
 
@@ -197,87 +277,143 @@ class Game:
                             self.total_guessed += occurances
 
                             if occurances == 0:
+                                # client guessed incorrectly
+                                name = player.client.name
+                                data = f"{name} incorrectly guessed "
+                                + f"the letter '{guess}'"
                                 await self.game.send_all(
                                     {
                                         "TYPE": "GAME_MESSAGE",
-                                        "DATA": f"{player.client.name} incorrectly guessed the letter {guess}",
+                                        "DATA": data,
                                     }
                                 )
 
                                 await asyncio.sleep(1)
 
-                                await self.advance()
+                                await self.advance(False)
                             else:
-                                print(occurances)
+                                # client guessed correctly
                                 score = self.prize * occurances
                                 player.score += score
+
+                                name = player.client.name
+
+                                await self.game.update_players()
+
+                                await self.game.send_all(
+                                    {
+                                        "TYPE": "GAME_MESSAGE",
+                                        "DATA": f"{name} guessed the letter " +
+                                        f"'{guess}' and won " +
+                                        f"{self.prize * occurances} " +
+                                        "dollars!",
+                                    }
+                                )
 
                                 if self.total_guessed >= len(
                                     re.sub(r"\W+", "", phrase)
                                 ):
-                                    print("got the complete phrase!")
 
                                     await asyncio.sleep(3)
                                     await self.game.round_handler.new_round()
                                 else:
+                                    await asyncio.sleep(2)
+                                    wheel_handler = self.game.wheel_handler
+                                    self.prize = (
+                                        wheel_handler.generate_prize()
+                                    )
                                     await self.game.send_all(
                                         {
-                                            "TYPE": "GAME_MESSAGE",
-                                            "DATA": f"{player.client.name} guessed the letter {guess} and won {self.prize * occurances} dollars!",
+                                            "TYPE": "SET_PRIZE",
+                                            "DATA": self.prize
                                         }
                                     )
-
-                                    await asyncio.sleep(2)
-                                    self.prize = (
-                                        self.game.wheel_handler.generate_prize()
-                                    )
-                                    await self.game.send_all(
-                                        {"TYPE": "SET_PRIZE", "DATA": self.prize}
-                                    )
-
-                        print(
-                            "".join(
-                                [
-                                    letter if letter in self.guessed_letters else "_"
-                                    for letter in self.phrase.text
-                                ]
-                            )
-                        )
                     else:
                         await player.client.error(
                             "Your guess must only be alphabetical characters"
                         )
                 elif len(guess) == 0:
+                    # client guessed nothing
                     await player.client.error(
-                        f"You must submit a guess; you attempted to submit nothing {random.randint(1, 100)}"
+                        "You must submit a guess; " +
+                        "you attempted to submit nothing"
                     )
                 else:
-                    print("guessed a phrase")
+                    # client guessed a phrase
                     if guess == phrase:
-                        print("is phrase")
+                        # client got phrase correct
                         player.score += 1000
+
+                        await self.game.send_all(
+                            {
+                                "TYPE": "GAME_MESSAGE",
+                                "DATA": f"{player.client.name} correctly " +
+                                f"guessed the phrase '{guess}' and won $1000",
+                            }
+                        )
+
+                        await self.update_phrase()
+                        await asyncio.sleep(3)
+
                         await self.game.round_handler.new_round()
                     else:
-                        print("not phrase")
-                        await self.advance()
+                        # client got phrase incorrect
+                        await self.game.send_all(
+                            {
+                                "TYPE": "GAME_MESSAGE",
+                                "DATA": f"{player.client.name} incorrectly " +
+                                f"guessed the phrase '{guess}'",
+                            }
+                        )
+
+                        await self.advance(False)
+
+                await self.update_phrase()
 
         def __init__(self, game):
             super().__init__(game)
             self.current_round = None
+            self.total_rounds = 0
 
+        # this creates a new round and sets the current round to it
         async def new_round(self):
-            print("new round")
+            self.total_rounds += 1
+
+            if self.total_rounds > 3:
+                # 3 rounds have already been played, finishing game
+                max_score = 0
+                best_player = "NOBODY"
+                for player in self.game.player_handler.players:
+                    if player.score >= max_score:
+                        max_score = player.score
+                        best_player = player.client.name
+
+                await self.game.send_all(
+                    {
+                        "TYPE": "GAME_MESSAGE",
+                        "DATA": f"GAME FINISHED! Winner: {best_player}",
+                    }
+                )
+                # this is in order to keep clients connected with very
+                # little overhead
+                await asyncio.sleep(99999)
+
             round = self.Round(self.game)
-            await round.start()
-            print("did the start()")
             self.current_round = round
+            await round.start()
+
             return round
 
     class WheelHandler(Service):
+        """
+        this class handles generating a random priE each time the wheel
+        is spun
+        """
         def __init__(self, game):
             super().__init__(game)
             self.prizes = [50, 100, 150, 200, 250, 500, 1000]
 
+        # generates a random prize from the list of possible prizes
         def generate_prize(self):
             return random.choice(self.prizes)
 
@@ -288,22 +424,25 @@ class Game:
             client.game = self
             self.player_handler.add_player(client)
 
-        print("adding from this thing")
-
+    # this starts up a new game instance. This is done seperately from
+    # the __init__ dunder function, as it needs to be run asynchronously
     async def start(self):
         data = {"TYPE": "JOINED_GAME", "DATA": ""}
         await self.send_all(data)
 
-        print("adding from beliw thing")
         self.current_round = await self.round_handler.new_round()
 
+    # this starts up and creates a reference to all of the services
     def add_services(self):
         self.player_handler = self.PlayerHandler(self)
         self.phrase_handler = self.PhraseHandler(self)
         self.round_handler = self.RoundHandler(self)
         self.wheel_handler = self.WheelHandler(self)
 
+    # this sends out a websocket to all the players telling them who's
+    # turn it is, who is in the game, and what score everyone has
     async def update_players(self):
+        current_player = self.round_handler.current_round.current_player
         for player in self.player_handler.players:
             player_info = {}
             player_id = 0
@@ -312,7 +451,7 @@ class Game:
                     "NAME": other.client.name,
                     "YOU": other == player,
                     "SCORE": other.score,
-                    "IS_TURN": self.round_handler.current_round.current_player == other,
+                    "IS_TURN": current_player == other,
                 }
                 player_info[player_id] = info
                 player_id += 1
@@ -321,6 +460,7 @@ class Game:
                 {"TYPE": "GAME_CONNECTED_UPDATE", "DATA": player_info}
             )
 
+    # this function can be used to send a message to every player in the game
     async def send_all(self, data):
         for player in self.player_handler.players:
             await player.client.send(data)
