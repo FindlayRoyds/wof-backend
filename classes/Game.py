@@ -50,6 +50,7 @@ class Game:
 
         def __init__(self, game):
             super().__init__(game)
+            self.game = game
             self.players = []
 
         # allows players to be added to the game
@@ -69,7 +70,8 @@ class Game:
             # shifts to the next person's turn if needed
             current_round = self.game.round_handler.current_round
             if len(self.players) == 0:
-                del self.game
+                if hasattr(self, 'game'):
+                    del self.game
             else:
                 if player == current_round.current_player:
                     current_round.current_player_index -= 1
@@ -78,8 +80,9 @@ class Game:
                     current_round.current_player_index = self.players.index(
                         current_round.current_player
                     )
-
-            await self.game.update_players()
+            
+            if hasattr(self, 'game'):
+                await self.game.update_players()
 
     class PhraseHandler(Service):
         """
@@ -171,6 +174,7 @@ class Game:
                 self.total_guessed = 0
 
                 await self.game.update_players()
+                await self.update_phrase()
 
                 await self.game.send_all(
                     {"TYPE": "GAME_MESSAGE", "DATA": "A new round is starting"}
@@ -279,8 +283,8 @@ class Game:
                             if occurances == 0:
                                 # client guessed incorrectly
                                 name = player.client.name
-                                data = f"{name} incorrectly guessed "
-                                + f"the letter '{guess}'"
+                                data = f"{name} incorrectly guessed the letter\
+'{guess}'"
                                 await self.game.send_all(
                                     {
                                         "TYPE": "GAME_MESSAGE",
@@ -303,10 +307,8 @@ class Game:
                                 await self.game.send_all(
                                     {
                                         "TYPE": "GAME_MESSAGE",
-                                        "DATA": f"{name} guessed the letter " +
-                                        f"'{guess}' and won " +
-                                        f"{self.prize * occurances} " +
-                                        "dollars!",
+                                        "DATA": f"{name} guessed the letter \
+'{guess}' and won {self.prize * occurances} dollars!",
                                     }
                                 )
 
@@ -316,6 +318,7 @@ class Game:
 
                                     await asyncio.sleep(3)
                                     await self.game.round_handler.new_round()
+                                    return
                                 else:
                                     await asyncio.sleep(2)
                                     wheel_handler = self.game.wheel_handler
@@ -335,8 +338,8 @@ class Game:
                 elif len(guess) == 0:
                     # client guessed nothing
                     await player.client.error(
-                        "You must submit a guess; " +
-                        "you attempted to submit nothing"
+                        "You must submit a guess; you attempted to submit \
+nothing"
                     )
                 else:
                     # client guessed a phrase
@@ -347,8 +350,8 @@ class Game:
                         await self.game.send_all(
                             {
                                 "TYPE": "GAME_MESSAGE",
-                                "DATA": f"{player.client.name} correctly " +
-                                f"guessed the phrase '{guess}' and won $1000",
+                                "DATA": f"{player.client.name} correctly \
+guessed the phrase '{guess}' and won $1000",
                             }
                         )
 
@@ -356,13 +359,14 @@ class Game:
                         await asyncio.sleep(3)
 
                         await self.game.round_handler.new_round()
+                        return
                     else:
                         # client got phrase incorrect
                         await self.game.send_all(
                             {
                                 "TYPE": "GAME_MESSAGE",
-                                "DATA": f"{player.client.name} incorrectly " +
-                                f"guessed the phrase '{guess}'",
+                                "DATA": f"{player.client.name} incorrectly \
+guessed the phrase '{guess}'",
                             }
                         )
 

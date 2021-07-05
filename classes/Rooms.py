@@ -40,7 +40,7 @@ class Rooms:
             # checks if the room is full. If so an error is sent to
             # the client
             if len(self.connected) + 1 > self.max_players:
-                client.error("This room is full!")
+                await client.error("This room is full!")
                 return
 
             self.connected.add(client)
@@ -134,6 +134,8 @@ class Rooms:
 
     # removes and untracks a room
     async def remove_room(self, room):
-        self.rooms.pop(hash(room))
+        if hasattr(self, 'rooms'):
+            if hash(room) in self.rooms:
+                self.rooms.pop(hash(room))
 
         await self.update_rooms()

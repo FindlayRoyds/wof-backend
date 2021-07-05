@@ -102,8 +102,8 @@ class Network:
     async def client_init(self, socket, path):
         self.sockets.add(socket)
         try:
-            if not on_heroku:
-                await asyncio.sleep(0)
+            if on_heroku:
+                await asyncio.sleep(2)
             await socket.send(json.dumps({"TYPE": "CONNECTED"}))
 
             # waits to recieve a login attempt from the client
@@ -244,6 +244,7 @@ class Network:
                         )
 
         except Exception as exception:
+            traceback.print_exc()
             if exception.__class__.__name__ != "ConnectionClosedOK":
                 # client disconnected from websocket
                 traceback.print_exc()
@@ -252,7 +253,7 @@ class Network:
                 await client.error(exception)
             except:
                 pass
-            await client.disconnect(str(exception))
+            await client.disconnect()
 
     # used to send data to every client connected to the server
     # has the ability to specify the location of clients to send to
